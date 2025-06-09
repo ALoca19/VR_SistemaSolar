@@ -53,7 +53,7 @@ let moveRight = false;
 let moveUp = false; // Nueva variable para subir
 let moveDown = false; // Nueva variable para bajar
 
-// Escuchar teclas para el movimiento
+// Escuchar teclas para el movimiento y posición de la cámara
 document.addEventListener('keydown', (event) => {
     switch (event.code) {
         case 'KeyS': moveForward = true; break;
@@ -63,6 +63,10 @@ document.addEventListener('keydown', (event) => {
         case 'Space': moveUp = true; break; // Subir con la barra espaciadora
         case 'ShiftLeft':
         case 'ShiftRight': moveDown = true; break; // Bajar con Shift
+        case 'Enter':
+            const pos = camera.position;
+            console.log(`Posición de la cámara: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}`);
+            break;
     }
 });
 
