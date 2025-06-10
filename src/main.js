@@ -56,104 +56,95 @@ let moveRight = false;
 let moveUp = false;
 let moveDown = false;
 
-// Definir la secuencia de movimientos de la cámara
-const cameraPath = [
-    {
-        position: { x: 28.20, y: 16.80, z: 9.61 }, // Punto inicial
-        rotation: { x: -1.08, y: 0.75, z: 0.90 },
-        duration: 3000, // Duración del movimiento en ms
-        wait: 2000 // Tiempo de espera en ms
-    },
-    {
-        position: { x: 0, y: 0, z: 0 }, // Cerca del Sol (offset para visibilidad)
-        duration: 3000,
-        wait: 2000
-    },
-    {
-        position: { x: 5, y: 5, z: 5 }, // Cerca de Marte (estimado)
-        duration: 3000,
-        wait: 2000
-    }
-];
-
-// Función para iniciar la secuencia de movimientos
 function startCameraSequence() {
     isManualControlEnabled = false; // Deshabilitar controles manuales
     if (controls.isLocked) controls.unlock(); // Desbloquear PointerLockControls
 
     console.log('Iniciando secuencia de cámara');
 
-    // Obtener la posición del Sol
-    const sun = scene.getObjectByName('Sol');
-    const positionPlanet = sun.position;
-
-    // Tween para mover la cámara a la posición del Sol
-    const positionTween1 = new TWEEN.Tween(camera.position)
-        .to({ x: positionPlanet.x, y: positionPlanet.y, z: positionPlanet.z}, 3000) // 3 segundos, offset para visibilidad
-        .easing(TWEEN.Easing.Quadratic.InOut);
-
-
-    // Ajustar orientación al llegar
-    positionTween1.onComplete(() => {
-        camera.lookAt(positionPlanet); // Apuntar al Sol
+    // Detener rotación y órbita de todos los planetas y clonar posiciones
+    const planetPositions = [];
+    planetsData.forEach((planetData) => {
+        const planet = scene.getObjectByName(planetData.name);
+        if (planet && planetData.name !== 'Sol') {
+            planetData.rotationSpeedBak = planetData.rotationSpeed; // Guardar velocidad original
+            planetData.isOrbiting = false; // Detener órbita
+            planetPositions.push({
+                name: planetData.name,
+                position: planet.position.clone() // Clonar posición fija
+            });
+        } else if (planet && planetData.name === 'Sol') {
+            planetPositions.push({
+                name: 'Sol',
+                position: planet.position.clone()
+            });
+        }
     });
 
-    // Tween de espera después de la posición del Sol
-    const waitTween1 = new TWEEN.Tween({})
-        .to({}, 2000); // 2 segundos
+    // Verificar si hay planetas para procesar
+    if (planetPositions.length === 0) {
+        console.warn('No se encontraron planetas cargados para la secuencia');
+        isManualControlEnabled = true;
+        return;
+    }
 
-    // Tween para mover la cámara a (5, 0, 5)
-    const positionTween2 = new TWEEN.Tween(camera.position)
-        .to({ x: 5, y: 0, z: 5 }, 3000) // 3 segundos
-        .easing(TWEEN.Easing.Quadratic.InOut);
-
-
-    // Tween de espera después de (5, 0, 5)
-    const waitTween2 = new TWEEN.Tween({})
-        .to({}, 2000)
-        .onComplete(() => {
-            isManualControlEnabled = true;
-            console.log('Secuencia de cámara finalizada');
-        });
-
-    // Encadenar tweens
-    positionTween1.chain(waitTween1);
-    waitTween1.chain(positionTween2);
-    positionTween2.chain(waitTween2);
-
-    // Iniciar tweens
-    positionTween1.start();
-
-    
-/*
-    cameraPath.forEach((step, index) => {
-        // Tween para la posición
+    // Crear tweens dinámicamente para cada planeta
+    let previousTween = null;
+    let firstTween = null;
+    planetPositions.forEach((planetInfo, index) => {
+        // Tween para mover la cámara a la posición del planeta
         const positionTween = new TWEEN.Tween(camera.position)
-            .to(step.position, step.duration)
-            .easing(TWEEN.Easing.Quadratic.InOut);
-
-        // Iniciar los tweens simultáneamente
-        if (index === 0) {
-            positionTween.start();
-        } else {
-            // Encadenar con el tween anterior
-            previousTween.chain(positionTween);
-        }
-
-        // Crear un tween vacío para la espera
-        const waitTween = new TWEEN.Tween({})
-            .to({}, step.wait)
+            .to({
+                x: planetInfo.position.x + (planetInfo.name === 'Sol' ? 2 : 2),
+                y: planetInfo.position.y,
+                z: planetInfo.position.z
+            }, 3000) // 3 segundos
+            .easing(TWEEN.Easing.Quadratic.InOut)
             .onComplete(() => {
-                if (index === cameraPath.length - 1) {
-                    // Rehabilitar controles manuales al final
-                    isManualControlEnabled = true;
-                    console.log('Secuencia de cámara finalizada');
-                }
+                camera.lookAt(planetInfo.position); // Apuntar al planeta
             });
 
+        // Guardar el primer tween
+        if (index === 0) {
+            firstTween = positionTween;
+        }
+
+        // Tween de espera después de cada planeta
+        const waitTween = new TWEEN.Tween({})
+            .to({}, 2000); // 2 segundos
+
+        // Encadenar tweens
+        if (index === 0) {
+            previousTween = positionTween;
+        } else {
+            previousTween.chain(positionTween);
+        }
         positionTween.chain(waitTween);
         previousTween = waitTween;
-    });*/
+
+        // Tween final para restaurar movimientos y controles
+        if (index === planetPositions.length - 1) {
+            waitTween.onComplete(() => {
+                // Restaurar rotación y órbita de todos los planetas
+                planetsData.forEach((planetData) => {
+                    if (planetData.name !== 'Sol') {
+                        planetData.rotationSpeed = planetData.rotationSpeedBak || 0;
+                        planetData.isOrbiting = true;
+                    }
+                });
+                isManualControlEnabled = true;
+                console.log('Secuencia de cámara finalizada');
+            });
+        }
+    });
+
+    // Iniciar el primer tween
+    if (firstTween) {
+        firstTween.start();
+    } else {
+        console.warn('No se crearon tweens para la secuencia');
+        isManualControlEnabled = true;
+    }
 }
 
 // Escuchar teclas para el movimiento, posición y secuencia
@@ -215,28 +206,109 @@ scene.add(sunLight);
 
 // Datos de los planetas
 const planetsData = [
-    { name: 'Sol', path: '/assets/Models/Sol.glb', rotationSpeed: 0.001 },
-    { name: 'Mercurio', path: '/assets/Models/Mercurio.glb', rotationSpeed: 0.004, orbitSpeed: 0.004 },
-    { name: 'Venus', path: '/assets/Models/Venus.glb', rotationSpeed: 0.002, orbitSpeed: 0.003 },
-    { name: 'Tierra', path: '/assets/Models/Tierra.glb', rotationSpeed: 0.01, orbitSpeed: 0.002 },
-    { name: 'Marte', path: '/assets/Models/Marte.glb', rotationSpeed: 0.009, orbitSpeed: 0.0015 },
-    { name: 'Jupiter', path: '/assets/Models/Jupiter.glb', rotationSpeed: 0.02, orbitSpeed: 0.0008 },
-    { name: 'Saturno', path: '/assets/Models/Saturno.glb', rotationSpeed: 0.018, orbitSpeed: 0.0006 },
-    { name: 'Urano', path: '/assets/Models/Urano.glb', rotationSpeed: 0.012, orbitSpeed: 0.0004 },
-    { name: 'Neptuno', path: '/assets/Models/Neptuno.glb', rotationSpeed: 0.011, orbitSpeed: 0.0003 },
+    { 
+        name: 'Sol', 
+        path: '/assets/Models/Sol.glb', 
+        rotationSpeed: 0.001, 
+        info: "El Sol es una estrella de secuencia principal con un diámetro de 1.39 millones de km. Representa el 99.86% de la masa del sistema solar."
+    },
+    { 
+        name: 'Mercurio', 
+        path: '/assets/Models/Mercurio.glb', 
+        rotationSpeed: 0.004, 
+        orbitSpeed: 0.004, 
+        radius: 3.9, 
+        isOrbiting: true,
+        info: "Mercurio es el planeta más pequeño, con un diámetro de 4,880 km. Tarda 88 días en orbitar el Sol."
+    },
+    { 
+        name: 'Venus', 
+        path: '/assets/Models/Venus.glb', 
+        rotationSpeed: 0.002, 
+        orbitSpeed: 0.003, 
+        radius: 7.2, 
+        isOrbiting: true,
+        info: "Venus tiene un diámetro de 12,104 km. Es el planeta más caliente debido a su atmósfera densa."
+    },
+    { 
+        name: 'Tierra', 
+        path: '/assets/Models/Tierra.glb', 
+        rotationSpeed: 0.01, 
+        orbitSpeed: 0.002, 
+        radius: 10.0, 
+        isOrbiting: true,
+        info: "La Tierra tiene un diámetro de 12,742 km. Es el único planeta conocido con vida."
+    },
+    { 
+        name: 'Marte', 
+        path: '/assets/Models/Marte.glb', 
+        rotationSpeed: 0.009, 
+        orbitSpeed: 0.0015, 
+        radius: 15.2, 
+        isOrbiting: true,
+        info: "Marte, el planeta rojo, tiene un diámetro de 6,792 km. Es conocido por su Monte Olimpo, el volcán más grande del sistema solar."
+    },
+    { 
+        name: 'Jupiter', 
+        path: '/assets/Models/Jupiter.glb', 
+        rotationSpeed: 0.02, 
+        orbitSpeed: 0.0008, 
+        radius: 52.0, 
+        isOrbiting: true,
+        info: "Júpiter es el planeta más grande, con un diámetro de 139,820 km. Tiene una gran mancha roja, una tormenta gigante."
+    },
+    { 
+        name: 'Saturno', 
+        path: '/assets/Models/Saturno.glb', 
+        rotationSpeed: 0.018, 
+        orbitSpeed: 0.0006, 
+        radius: 95.8, 
+        isOrbiting: true,
+        info: "Saturno tiene un diámetro de 116,460 km. Es famoso por sus impresionantes anillos de hielo y roca."
+    },
+    { 
+        name: 'Urano', 
+        path: '/assets/Models/Urano.glb', 
+        rotationSpeed: 0.012, 
+        orbitSpeed: 0.0004, 
+        radius: 191.8, 
+        isOrbiting: true,
+        info: "Urano tiene un diámetro de 50,724 km. Gira de lado debido a una inclinación extrema de su eje."
+    },
+    { 
+        name: 'Neptuno', 
+        path: '/assets/Models/Neptuno.glb', 
+        rotationSpeed: 0.011, 
+        orbitSpeed: 0.0003, 
+        radius: 300.7, 
+        isOrbiting: true,
+        info: "Neptuno tiene un diámetro de 49,244 km. Es conocido por sus fuertes vientos, los más rápidos del sistema solar."
+    },
 ];
 
 // Cargar modelos 3D
 const loader = new GLTFLoader();
-planetsData.forEach((planetData) => {
+planetsData.forEach((planetData, index) => {
     loader.load(
         planetData.path,
         (gltf) => {
             const planet = gltf.scene;
             planet.name = planetData.name;
             planet.rotationSpeed = planetData.rotationSpeed || 0.01;
+            // Establecer posición inicial basada en el radio
+            if (planetData.name !== 'Sol' && planetData.radius) {
+                // Distribuir planetas con un ángulo inicial para evitar alineación
+                const angle = (index - 1) * Math.PI / 4; // Ángulo inicial diferente para cada planeta
+                planet.position.set(
+                    planetData.radius * Math.cos(angle),
+                    0,
+                    planetData.radius * Math.sin(angle)
+                );
+            } else {
+                planet.position.set(0, 0, 0); // Sol en el origen
+            }
             scene.add(planet);
-            console.log(`Modelo ${planetData.name} cargado:`, planet);
+            console.log(`Modelo ${planetData.name} cargado en posición:`, planet.position);
         },
         (progress) => {
             console.log(`Cargando ${planetData.name}: ${(progress.loaded / progress.total * 100).toFixed(2)}%`);
@@ -246,6 +318,7 @@ planetsData.forEach((planetData) => {
         }
     );
 });
+
 
 // Animación
 function animate() {
@@ -272,11 +345,22 @@ function animate() {
         camera.position.y += velocity.y;
     }
 
-    // Rotar los planetas
+    // Rotar los planetas y actualizar órbitas
+    const time = Date.now();
     planetsData.forEach((planetData) => {
         const planet = scene.getObjectByName(planetData.name);
         if (planet) {
+            // Rotación sobre su propio eje
             planet.rotation.y += planetData.rotationSpeed;
+            // Órbita alrededor del Sol (excepto para el Sol)
+            if (planetData.name !== 'Sol' && planetData.orbitSpeed && planetData.radius && planetData.isOrbiting) {
+                const angle = time * planetData.orbitSpeed;
+                planet.position.set(
+                    planetData.radius * Math.cos(angle),
+                    0,
+                    planetData.radius * Math.sin(angle)
+                );
+            }
         }
     });
 
