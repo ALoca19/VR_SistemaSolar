@@ -92,10 +92,26 @@ function startCameraSequence() {
     let previousTween = null;
     let firstTween = null;
     planetPositions.forEach((planetInfo, index) => {
+
+        let posicionXPlus = 0; // Variable para ajustar la posición X
+        if(planetInfo.name === 'Jupiter' || planetInfo.name === 'Saturno') 
+        {
+            // Ajustar posición X para Sol, Júpiter y Saturno
+            posicionXPlus = 10;
+        }
+        else if (planetInfo.name === 'Urano' || planetInfo.name === 'Neptuno')
+        {
+            posicionXPlus = 6;
+        }
+        else
+        {
+            posicionXPlus = 1;
+        }
+
         // Tween para mover la cámara a la posición del planeta
         const positionTween = new TWEEN.Tween(camera.position)
             .to({
-                x: planetInfo.position.x + (planetInfo.name === 'Sol' ? 2 : 2),
+                x: planetInfo.position.x + (planetInfo.name === 'Sol' ? 2 : posicionXPlus),
                 y: planetInfo.position.y,
                 z: planetInfo.position.z
             }, 3000) // 3 segundos
