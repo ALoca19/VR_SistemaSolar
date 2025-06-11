@@ -29,6 +29,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true; // Habilitar WebXR
 document.body.appendChild(renderer.domElement);
 
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sombras suaves
+
 // Botón VR
 document.body.appendChild(VRButton.createButton(renderer));
 
@@ -61,114 +64,6 @@ let moveRight = false;
 let moveUp = false;
 let moveDown = false;
 
-/*
-function startCameraSequence() {
-    isManualControlEnabled = false; // Deshabilitar controles manuales
-    if (controls.isLocked) controls.unlock(); // Desbloquear PointerLockControls
-
-    console.log('Iniciando secuencia de cámara');
-
-    // Detener rotación y órbita de todos los planetas y clonar posiciones
-    const planetPositions = [];
-    planetsData.forEach((planetData) => {
-        const planet = scene.getObjectByName(planetData.name);
-        if (planet && planetData.name !== 'Sol') {
-            planetData.rotationSpeedBak = planetData.rotationSpeed; // Guardar velocidad original
-            planetData.isOrbiting = false; // Detener órbita
-            planetPositions.push({
-                name: planetData.name,
-                position: planet.position.clone() // Clonar posición fija
-            });
-        } else if (planet && planetData.name === 'Sol') {
-            planetPositions.push({
-                name: 'Sol',
-                position: planet.position.clone()
-            });
-        }
-    });
-
-    // Verificar si hay planetas para procesar
-    if (planetPositions.length === 0) {
-        console.warn('No se encontraron planetas cargados para la secuencia');
-        isManualControlEnabled = true;
-        return;
-    }
-
-    // Crear tweens dinámicamente para cada planeta
-    let previousTween = null;
-    let firstTween = null;
-    planetPositions.forEach((planetInfo, index) => {
-
-        let posicionXPlus = 0; // Variable para ajustar la posición X
-        if(planetInfo.name === 'Jupiter' || planetInfo.name === 'Saturno') 
-        {
-            // Ajustar posición X para Sol, Júpiter y Saturno
-            posicionXPlus = 10;
-        }
-        else if (planetInfo.name === 'Urano' || planetInfo.name === 'Neptuno')
-        {
-            posicionXPlus = 6;
-        }
-        else
-        {
-            posicionXPlus = 1;
-        }
-
-        // Tween para mover la cámara a la posición del planeta
-        const positionTween = new TWEEN.Tween(camera.position)
-            .to({
-                x: planetInfo.position.x + (planetInfo.name === 'Sol' ? 2 : posicionXPlus),
-                y: planetInfo.position.y,
-                z: planetInfo.position.z
-            }, 3000) // 3 segundos
-            .easing(TWEEN.Easing.Quadratic.InOut)
-            .onComplete(() => {
-                camera.lookAt(planetInfo.position); // Apuntar al planeta
-            });
-
-        // Guardar el primer tween
-        if (index === 0) {
-            firstTween = positionTween;
-        }
-
-        // Tween de espera después de cada planeta
-        const waitTween = new TWEEN.Tween({})
-            .to({}, 2000); // 2 segundos
-
-        // Encadenar tweens
-        if (index === 0) {
-            previousTween = positionTween;
-        } else {
-            previousTween.chain(positionTween);
-        }
-        positionTween.chain(waitTween);
-        previousTween = waitTween;
-
-        // Tween final para restaurar movimientos y controles
-        if (index === planetPositions.length - 1) {
-            waitTween.onComplete(() => {
-                // Restaurar rotación y órbita de todos los planetas
-                planetsData.forEach((planetData) => {
-                    if (planetData.name !== 'Sol') {
-                        planetData.rotationSpeed = planetData.rotationSpeedBak || 0;
-                        planetData.isOrbiting = true;
-                    }
-                });
-                isManualControlEnabled = true;
-                console.log('Secuencia de cámara finalizada');
-            });
-        }
-    });
-
-    // Iniciar el primer tween
-    if (firstTween) {
-        firstTween.start();
-    } else {
-        console.warn('No se crearon tweens para la secuencia');
-        isManualControlEnabled = true;
-    }
-}
-*/
 
 function startCameraSequence() {
     isManualControlEnabled = false;
@@ -340,10 +235,15 @@ const skyboxTexture = cubeTextureLoader.load(skyboxTextures);
 scene.background = skyboxTexture;
 
 // Iluminación
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+const ambientLight = new THREE.AmbientLight(0xffffff, 5);
 scene.add(ambientLight);
-const sunLight = new THREE.PointLight(0xffffff, 5, 1000);
-sunLight.position.set(0, 0, 0);
+const sunLight = new THREE.PointLight(0xfff8e1, 80, 5000, 2); // Color cálido, intensidad alta, distancia amplia
+sunLight.position.set(0, 0, 5); // Centro en el Sol
+sunLight.castShadow = true; // Habilitar sombras
+sunLight.shadow.mapSize.width = 1024; // Resolución de sombras
+sunLight.shadow.mapSize.height = 1024;
+sunLight.shadow.camera.near = 0.1;
+sunLight.shadow.camera.far = 5000;
 scene.add(sunLight);
 
 // Datos de los planetas
@@ -450,6 +350,14 @@ planetsData.forEach((planetData, index) => {
             const planet = gltf.scene;
             planet.name = planetData.name;
             planet.rotationSpeed = planetData.rotationSpeed || 0.01;
+
+            planet.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+            });
+
             // Establecer posición inicial basada en el radio
             if (planetData.name !== 'Sol' && planetData.radius) {
                 // Distribuir planetas con un ángulo inicial para evitar alineación
