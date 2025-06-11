@@ -170,20 +170,34 @@ function startCameraSequence() {
 }
 */
 
-
 function startCameraSequence() {
-    isManualControlEnabled = false; // Deshabilitar controles manuales
-    if (controls.isLocked) controls.unlock(); // Desbloquear PointerLockControls
+    isManualControlEnabled = false;
+    if (controls.isLocked) controls.unlock();
 
     console.log('Iniciando secuencia de cámara');
 
-    // Detener rotación y órbita de todos los planetas y clonar posiciones
+    if (currentAudio && currentAudio.isPlaying) {
+        currentAudio.stop();
+        currentAudio = null;
+    }
+
+    // Tween inicial para esperar el audio de introducción
+    const introTween = new TWEEN.Tween({})
+        .to({}, sounds['inicioSound']?.duration || 2000)
+        .onStart(() => {
+            if (sounds['inicioSound']) {
+                currentAudio = sounds['inicioSound'];
+                currentAudio.play();
+            }
+        });
+
+    // Resto del código...
     const planetPositions = [];
     planetsData.forEach((planetData) => {
         const planet = scene.getObjectByName(planetData.name);
         if (planet && planetData.name !== 'Sol') {
-            planetData.rotationSpeedBak = planetData.rotationSpeed; // Guardar velocidad original
-            planetData.isOrbiting = false; // Detener órbita
+            planetData.rotationSpeedBak = planetData.rotationSpeed;
+            planetData.isOrbiting = false;
             planetPositions.push({
                 name: planetData.name,
                 position: planet.position.clone()
@@ -196,36 +210,15 @@ function startCameraSequence() {
         }
     });
 
-    // Verificar si hay planetas para procesar
     if (planetPositions.length === 0) {
         console.warn('No se encontraron planetas cargados para la secuencia');
         isManualControlEnabled = true;
         return;
     }
 
-    // Crear un audio global para reproducir los buffers
-    const audio = new THREE.Audio(listener);
-
-    // Función para reproducir un audio y esperar a que termine
-    function playAudio(key) {
-        return new Promise((resolve) => {
-            if (audioBuffers[key]) {
-                audio.setBuffer(audioBuffers[key]);
-                audio.setVolume(0.5); // Ajustar volumen si es necesario
-                audio.play();
-                audio.onEnded = () => {
-                    console.log(`Audio ${key} terminado`);
-                    resolve();
-                };
-            } else {
-                console.warn(`Audio ${key} no encontrado`);
-                resolve(); // Continuar si no hay audio
-            }
-        });
-    }
-
-    // Función para crear un tween de movimiento de cámara
-    function createPositionTween(planetInfo) {
+    let previousTween = introTween; // Comenzar la cadena con introTween
+    let firstTween = null;
+    planetPositions.forEach((planetInfo, index) => {
         let posicionXPlus = 0;
         if (planetInfo.name === 'Jupiter' || planetInfo.name === 'Saturno') {
             posicionXPlus = 10;
@@ -235,62 +228,65 @@ function startCameraSequence() {
             posicionXPlus = 1;
         }
 
-        return new TWEEN.Tween(camera.position)
+        const positionTween = new TWEEN.Tween(camera.position)
             .to({
                 x: planetInfo.position.x + (planetInfo.name === 'Sol' ? 2 : posicionXPlus),
                 y: planetInfo.position.y,
                 z: planetInfo.position.z
             }, 3000)
             .easing(TWEEN.Easing.Quadratic.InOut)
+            .onStart(() => {
+                if (currentAudio && currentAudio.isPlaying) {
+                    currentAudio.stop();
+                }
+                if (sounds[planetInfo.name]) {
+                    currentAudio = sounds[planetInfo.name];
+                    currentAudio.play();
+                } else {
+                    console.warn(`No se encontró audio para ${planetInfo.name}`);
+                }
+            })
             .onComplete(() => {
-                camera.lookAt(planetInfo.position); // Apuntar al planeta
-            });
-    }
-
-    // Secuencia completa
-    async function runSequence() {
-        // 1. Reproducir audio de introducción
-        await playAudio('Intro');
-
-        // 2. Procesar cada planeta
-        for (const planetInfo of planetPositions) {
-            // Reproducir audio del planeta
-            //await playAudio(planetInfo.name);
-            await playAudio('Sol');
-
-            // Mover cámara al planeta
-            const positionTween = createPositionTween(planetInfo);
-            positionTween.start();
-            // Esperar a que el tween termine
-            await new Promise((resolve) => {
-                positionTween.onComplete(resolve);
+                camera.lookAt(planetInfo.position);
             });
 
-            // Espera adicional después de llegar al planeta (2 segundos)
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (index === 0) {
+            firstTween = positionTween;
         }
 
-        // 3. Reproducir audio de cierre
-        //await playAudio('outro');
-        await playAudio('Intro');
+        const waitTween = new TWEEN.Tween({})
+            .to({}, sounds[planetInfo.name]?.duration || 2000);
 
-        // 4. Restaurar movimientos y controles
-        planetsData.forEach((planetData) => {
-            if (planetData.name !== 'Sol') {
-                planetData.rotationSpeed = planetData.rotationSpeedBak || 0;
-                planetData.isOrbiting = true;
-            }
-        });
-        isManualControlEnabled = true;
-        console.log('Secuencia de cámara finalizada');
-    }
+        previousTween.chain(positionTween);
+        positionTween.chain(waitTween);
+        previousTween = waitTween;
 
-    // Iniciar la secuencia
-    runSequence().catch((error) => {
-        console.error('Error en la secuencia:', error);
-        isManualControlEnabled = true;
+        if (index === planetPositions.length - 1) {
+            waitTween.onComplete(() => {
+                if (currentAudio && currentAudio.isPlaying) {
+                    currentAudio.stop();
+                }
+                if (sounds['terminoSound']) {
+                    currentAudio = sounds['terminoSound'];
+                    currentAudio.play();
+                }
+                planetsData.forEach((planetData) => {
+                    if (planetData.name !== 'Sol') {
+                        planetData.rotationSpeed = planetData.rotationSpeedBak || 0;
+                        planetData.isOrbiting = true;
+                    }
+                });
+                isManualControlEnabled = true;
+                console.log('Secuencia de cámara finalizada');
+            });
+        }
     });
+
+    introTween.start();
 }
+
+
+
     
 
 // Escuchar teclas para el movimiento, posición y secuencia
@@ -355,7 +351,7 @@ const planetsData = [
     { 
         name: 'Sol', 
         path: './assets/Models/Sol.glb',
-        audioPath: './assets/Audio/Intro.mp3', 
+        audioPath: './assets/Audio/Sol.mp3', 
         rotationSpeed: 0.001, 
         info: "El Sol es una estrella de secuencia principal con un diámetro de 1.39 millones de km. Representa el 99.86% de la masa del sistema solar."
     },
@@ -382,7 +378,7 @@ const planetsData = [
     { 
         name: 'Tierra', 
         path: './assets/Models/Tierra.glb',
-        audioPath: './assets/Audio/Sol.mp3', 
+        audioPath: './assets/Audio/Tierra.mp3', 
         rotationSpeed: 0.01, 
         orbitSpeed: 0.002, 
         radius: 10.0, 
@@ -392,7 +388,7 @@ const planetsData = [
     { 
         name: 'Marte', 
         path: './assets/Models/Marte.glb',
-        audioPath: './assets/Audio/Sol.mp3', 
+        audioPath: './assets/Audio/Marte.mp3', 
         rotationSpeed: 0.009, 
         orbitSpeed: 0.0015, 
         radius: 15.2, 
@@ -402,7 +398,7 @@ const planetsData = [
     { 
         name: 'Jupiter', 
         path: './assets/Models/Jupiter.glb',
-        audioPath: './assets/Audio/Sol.mp3', 
+        audioPath: './assets/Audio/Jupiter.mp3', 
         rotationSpeed: 0.02, 
         orbitSpeed: 0.0008, 
         radius: 52.0, 
@@ -412,7 +408,7 @@ const planetsData = [
     { 
         name: 'Saturno', 
         path: './assets/Models/Saturno.glb',
-        audioPath: './assets/Audio/Sol.mp3', 
+        audioPath: './assets/Audio/Saturno.mp3', 
         rotationSpeed: 0.018, 
         orbitSpeed: 0.0006, 
         radius: 95.8, 
@@ -422,7 +418,7 @@ const planetsData = [
     { 
         name: 'Urano', 
         path: './assets/Models/Urano.glb',
-        audioPath: './assets/Audio/Sol.mp3', 
+        audioPath: './assets/Audio/Urano.mp3', 
         rotationSpeed: 0.012, 
         orbitSpeed: 0.0004, 
         radius: 191.8, 
@@ -432,7 +428,7 @@ const planetsData = [
     { 
         name: 'Neptuno', 
         path: './assets/Models/Neptuno.glb', 
-        audioPath: './assets/Audio/Sol.mp3',
+        audioPath: './assets/Audio/Neptuno.mp3',
         rotationSpeed: 0.011, 
         orbitSpeed: 0.0003, 
         radius: 300.7, 
@@ -443,7 +439,7 @@ const planetsData = [
 
 // Audios especiales
 const introAudioPath = './assets/Audio/Intro.mp3';
-const outroAudioPath = './assets/Audio/Intro.mp3';
+const outroAudioPath = './assets/Audio/Termino.mp3';
 
 // Cargar modelos 3D
 const loader = new GLTFLoader();
@@ -479,7 +475,10 @@ planetsData.forEach((planetData, index) => {
 });
 
 // Objeto para almacenar los audios cargados
+// Objeto para almacenar los audios cargados
 const audioBuffers = {};
+const sounds = {}; // Objeto para almacenar instancias de THREE.Audio
+let currentAudio = null; // Referencia al audio que se está reproduciendo
 const audioLoader = new THREE.AudioLoader();
 
 // Función para cargar un audio y almacenarlo
@@ -510,12 +509,19 @@ planetsData.forEach((planetData) => {
     audioLoadPromises.push(loadAudio(planetData.audioPath, planetData.name));
 });
 // Audios de introducción y cierre
-audioLoadPromises.push(loadAudio(introAudioPath, 'intro'));
-audioLoadPromises.push(loadAudio(outroAudioPath, 'outro'));
+audioLoadPromises.push(loadAudio(introAudioPath, 'inicioSound'));
+audioLoadPromises.push(loadAudio(outroAudioPath, 'terminoSound'));
 
-// Esperar a que todos los audios se carguen
 Promise.all(audioLoadPromises).then(() => {
     console.log('Todos los audios cargados');
+    // Crear instancias de THREE.Audio para cada buffer
+    Object.keys(audioBuffers).forEach((key) => {
+        const sound = new THREE.Audio(listener);
+        sound.setBuffer(audioBuffers[key]);
+        sound.setVolume(0.5); // Ajusta el volumen si es necesario
+        sound.duration = audioBuffers[key].duration * 1000; // Duración en milisegundos
+        sounds[key] = sound;
+    });
 }).catch((error) => {
     console.error('Error al cargar algunos audios:', error);
 });
